@@ -92,6 +92,7 @@ export async function POST(req: Request) {
     // 失敗したダウンロードがあるか確認
     const failedDownloads = downloadLogs.filter(log => log.status === 'failed');
     if (failedDownloads.length > 0) {
+      console.error('ダウンロードに失敗したURL:', failedDownloads);
       return NextResponse.json({ 
         error: '一部のURLのダウンロードに失敗しました。', 
         downloadLogs,
@@ -118,15 +119,28 @@ export async function POST(req: Request) {
 
     // ダウンロードしたファイルをアーカイブに追加
     downloadedFiles.forEach(file => {
-      archive.append(file.buffer, { name: file.name });
+      try {
+        archive.append(file.buffer, { name: file.name });
+      } catch (archiveAppendError) {
+        console.error('アーカイブへの追加中にエラーが発生しました:', archiveAppendError, 'ファイル名:', file.name);
+        return NextResponse.json({ error: 'ZIPファイルの作成中にエラーが発生しました。' }, { status: 500 });
+      }
     });
 
     // ZIPアーカイブの終了を待機
-    await new Promise<void>((resolve, reject) => {
-      output.on('close', () => resolve());
-      archive.on('error', (err) => reject(err));
-      archive.finalize();
-    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        output.on('close', () => resolve());
+        archive.on('error', (err) => {
+          console.error('アーカイブ中にエラーが発生しました:', err);
+          reject(err);
+        });
+        archive.finalize();
+      });
+    } catch (archiveFinalizeError) {
+      console.error('アーカイブの終了中にエラーが発生しました:', archiveFinalizeError);
+      return NextResponse.json({ error: 'ZIPファイルの作成中にエラーが発生しました。' }, { status: 500 });
+    }
     
     // ZIPファイルをダウンロードするためのURLを返す
     const zipUrl = `/api/download-zip/${zipFilename}`;

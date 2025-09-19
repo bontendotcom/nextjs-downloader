@@ -27,8 +27,15 @@ export async function GET(req: Request, { params }: { params: { filename: string
     // ストリームをBlobに変換
     const streamToBlob = (stream: fs.ReadStream) => {
       return new Promise<Blob>((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        const chunks: ArrayBuffer[] = [];
+        stream.on('data', (chunk) => {
+          if (typeof chunk === 'string') {
+            // 文字列の場合は、ArrayBufferに変換する
+            chunks.push(new TextEncoder().encode(chunk).buffer);
+          } else {
+            chunks.push(chunk.buffer);
+          }
+        });
         stream.on('end', () => resolve(new Blob(chunks)));
         stream.on('error', (err) => reject(err));
       });
@@ -36,10 +43,6 @@ export async function GET(req: Request, { params }: { params: { filename: string
     
     const blob = await streamToBlob(fileStream);
 
-    // ダウンロード後にファイルを削除 (本番環境では注意)
-    fs.unlink(filePath, (err) => {
-      if (err) console.error('一時ファイルの削除に失敗しました:', err);
-    });
 
     return new NextResponse(blob, {
       status: 200,
